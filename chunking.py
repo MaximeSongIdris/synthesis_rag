@@ -13,7 +13,7 @@ class ChunkSource:
     headings: list[str]
     pages: list[int]
 
-def chunk_documents(json_dir: Path, chunker: HybridChunker,
+def chunk_documents(json_dir: str | Path, chunker: HybridChunker,
                     min_words: int = 20) -> tuple[list[str], list[str], list[ChunkSource]]:
     """Restore every DoclingDocument saved as JSON in `json_dir`,
     then chunk them into three lists: texts, texts_without_title and sources."""
@@ -22,7 +22,7 @@ def chunk_documents(json_dir: Path, chunker: HybridChunker,
     sources: list[ChunkSource] = []      # where each chunk comes from
 
     seen: set[str] = set()
-    for json_path in sorted(json_dir.glob("*.json")):
+    for json_path in sorted(Path(json_dir).rglob("*.json", case_sensitive=False)):
         doc = DoclingDocument.load_from_json(json_path)  # restore the DoclingDocument from its saved JSON
         for chunk in chunker.chunk(dl_doc=doc):
             if len(chunk.text.split()) < min_words or chunk.text in seen:
