@@ -1,6 +1,7 @@
 import contextlib
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
+
 from docling_core.types.doc import ImageRefMode
 from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 from docling.datamodel.base_models import InputFormat, ConversionStatus
@@ -22,35 +23,37 @@ class Docx2DoclingDocument:
     """
 
     DEFAULT_IMAGE_PROMPT = (
-        "Tu analyses une image extraite d'un document professionnel en français. "
-        "1) Indique d'abord le type d'image : schéma ou organigramme, graphique, tableau, logo, "
-        "icône, capture d'écran, palette de couleurs, photographie ou autre. "
-        "2) Décris ensuite précisément son contenu selon son type (éléments, liens, valeurs, "
-        "légendes, couleurs). "
-        "3) Recopie enfin tout le texte visible, tel quel, ou écris « Aucun texte visible ». "
-        "N'invente rien."
+        "Décris cette image extraite d'un document français, pour qu'une personne qui ne la voit pas "
+        "comprenne son contenu. Réponds uniquement en français, sans introduction, sans rien inventer.\n\n"
+        "Réponds exactement dans ce format Markdown, sans titre (#) :\n\n"
+        "**Type :** schéma, organigramme, graphique, tableau, logo, icône, capture d'écran, "
+        "palette de couleurs, photographie ou autre\n\n"
+        "**Description :** selon le type :\n"
+        "- schéma ou organigramme : une liste à puces, un élément ou un lien par ligne (« A → B »), "
+        "dans l'ordre des étapes ;\n"
+        "- graphique : le type, les axes, les séries, les valeurs lisibles et la tendance ;\n"
+        "- tableau : un tableau Markdown reprenant les colonnes et les lignes ;\n"
+        "- palette de couleurs : un tableau Markdown | Couleur | Code |, une ligne par couleur ;\n"
+        "- logo ou icône : sa forme et ses couleurs, en une ou deux phrases ;\n"
+        "- capture d'écran ou maquette : une liste à puces des zones visibles et de leur contenu ;\n"
+        "- photographie : les personnes, objets, lieu, action et ambiance, en quelques phrases.\n\n"
     )
 
     def __init__(self,
                  artifacts_path: str | Path,
-                 vlm_model_path: str | Path,
+                 vlm_model: str,
                  image_prompt: str | None = None,
                  num_threads: int = 4) -> None:
         # Docling loads the description model from "artifacts_path / repo_id":
-        # link the local VLM there so the other Docling models stay in artifacts_path
-        vlm_model_path = Path(vlm_model_path)
-        link = Path(artifacts_path) / vlm_model_path.name
-        if not link.exists():
-            link.symlink_to(vlm_model_path, target_is_directory=True)
-
         opts = ConvertPipelineOptions(
             artifacts_path=artifacts_path,
             accelerator_options=AcceleratorOptions(num_threads=num_threads, device=AcceleratorDevice.AUTO),
             do_picture_classification=True,
             do_picture_description=True,
             picture_description_options=PictureDescriptionVlmOptions(
-                repo_id=vlm_model_path.name,  # same name as the symlink
+                repo_id=vlm_model,
                 prompt=image_prompt or self.DEFAULT_IMAGE_PROMPT,
+                generation_config={"max_new_tokens": 512, "do_sample": False},  # default truncates long descriptions
             ),
         )
         self.converter = DocumentConverter(

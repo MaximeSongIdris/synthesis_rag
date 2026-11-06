@@ -1,28 +1,29 @@
-import torch
-import pandas as pd
-from pathlib import Path
 from collections.abc import Iterable
-from transformers import AutoProcessor, AutoModelForImageTextToText
+from pathlib import Path
+
+import pandas as pd
+import torch
+from docling_core.types.doc import DocItemLabel
 from docling.datamodel.base_models import InputFormat, ConversionStatus
 from docling.document_converter import DocumentConverter
-from docling_core.types.doc import DocItemLabel
+from transformers import AutoProcessor, AutoModelForImageTextToText
 
 
 class Xlsx2DoclingDocument:
-    """Convert Excel files to DoclingDocuments, with a description of each table.
+    """Convertit des fichiers Excel en DoclingDocument, avec une description de chaque tableau.
 
-    The table itself is extracted by Docling's DocumentConverter (XLSX backend), not rebuilt
-    by hand. This is deliberate: Docling reads the workbook structure directly (rows, columns,
-    merged cells, hence multi-level column categories) and produces the table cells.
-    Rebuilding it ourselves from pandas would mean handling multi-level headers, column spans
-    and value types by hand, with a higher risk of errors.
+    Le tableau lui-même est extrait par le DocumentConverter de Docling (backend XLSX), et
+    non reconstruit à la main. Ce choix est volontaire : Docling lit directement la structure
+    du classeur (lignes, colonnes, cellules fusionnées, donc catégories de colonnes sur
+    plusieurs niveaux) et produit les cellules du tableau. Le reconstruire nous-mêmes depuis
+    pandas obligerait à gérer à la main les en-têtes multi-niveaux, les spans de colonnes et
+    les types de valeurs, avec un risque d'erreur plus élevé.
 
-    pandas is only used to read the first raw rows of each sheet (header=None, no header
-    interpretation). These rows are given to a vision-language model (text only), which
-    writes a description in French, attached to the table as its caption. The full table
-    remains the one produced by Docling.
+    pandas n'est utilisé que pour lire les premières lignes brutes de chaque feuille
+    (header=None, pas d'interprétation d'en-tête). Ces lignes sont données à un modèle de
+    vision-langage (texte seul) qui produit une description en français, ajoutée au tableau
+    comme légende (caption). Le tableau complet reste celui de Docling.
     """
-
     DEFAULT_PROMPT = (
         "Voici les premières lignes brutes d'une feuille Excel (« {sheet} »). "
         "Les premières lignes sont des en-têtes, parfois sur "
@@ -34,7 +35,7 @@ class Xlsx2DoclingDocument:
         "N'invente rien, ne donne aucun total ni statistique."
     )
 
-    def __init__(self, vlm_model: str | Path, n_head: int = 10, max_new_tokens: int = 400) -> None:
+    def __init__(self, vlm_model: str | Path, n_head: int = 10, max_new_tokens: int = 512) -> None:
         self.converter = DocumentConverter(allowed_formats=[InputFormat.XLSX])
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.processor = AutoProcessor.from_pretrained(vlm_model)
@@ -46,11 +47,13 @@ class Xlsx2DoclingDocument:
         prompt = self.DEFAULT_PROMPT.format(
             sheet=sheet, table=head.fillna("").to_string(header=False, index=False))
         chat = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
-        text = self.processor.apply_chat_template(chat, add_generation_prompt=True)
-        inputs = self.processor(text=text, return_tensors="pt").to(self.device)
+        chat_prompt = self.processor.apply_chat_template(chat, add_generation_prompt=True)
+        inputs = self.processor(text=chat_prompt, return_tensors="pt").to(self.device)
         with torch.no_grad():
-            out = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens)
-        return self.processor.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True).strip()
+            # for descriptions we want faithful, reproducible text, not variety
+            output_ids = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens, do_sample=False)
+        new_ids = output_ids[0][inputs["input_ids"].shape[1]:]  # drop the prompt tokens
+        return self.processor.decode(new_ids, skip_special_tokens=True).strip()
 
     def convert_all(self, paths: Iterable[str | Path], out_dir: str | Path) -> None:
         out_dir = Path(out_dir)

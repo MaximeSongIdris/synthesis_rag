@@ -1,3 +1,4 @@
+import contextlib
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -24,6 +25,7 @@ class SimplePptx2DoclingDocument:
                 continue
 
             doc = result.document
-            doc.save_as_json(out_dir / f"{name}.json")
-            doc.save_as_markdown(out_dir / f"{name}.md")
+            with contextlib.chdir(out_dir):  # keeps the image folder next to the files, not nested
+                doc.save_as_json(f"{name}.json")
+                doc.save_as_markdown(f"{name}.md")
             print("SAVED:", name, "|", len(doc.pages), "slides")
