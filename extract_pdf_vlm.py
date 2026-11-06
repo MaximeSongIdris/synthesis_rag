@@ -1,6 +1,7 @@
 import contextlib
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
+
 from docling_core.types.doc import ImageRefMode
 from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 from docling.datamodel.base_models import InputFormat, ConversionStatus
@@ -24,16 +25,10 @@ class VlmPdf2DoclingDocument:
 
     def __init__(self,
                  artifacts_path: str | Path,
-                 vlm_model_path: str | Path,
+                 vlm_model: str,
                  vlm_options: InlineVlmOptions | None = None,
                  num_threads: int = 4) -> None:
         # Docling loads the VLM from "artifacts_path / repo_id":
-        # link the local VLM there so the other Docling models stay in artifacts_path
-        vlm_model_path = Path(vlm_model_path)
-        link = Path(artifacts_path) / vlm_model_path.name
-        if not link.exists():
-            link.symlink_to(vlm_model_path, target_is_directory=True)
-
         vlm_options = (vlm_options or InlineVlmOptions(
             repo_id="",  # set below
             prompt=self.DEFAULT_PAGE_PROMPT,
@@ -41,13 +36,15 @@ class VlmPdf2DoclingDocument:
             inference_framework=InferenceFramework.TRANSFORMERS,
             transformers_model_type=TransformersModelType.AUTOMODEL_IMAGETEXTTOTEXT,
             max_new_tokens=4096,
-        )).model_copy(update={"repo_id": vlm_model_path.name})  # same name as the symlink
+        )).model_copy(update={"repo_id": vlm_model})
 
         opts = VlmPipelineOptions(
             artifacts_path=artifacts_path,
             accelerator_options=AcceleratorOptions(num_threads=num_threads, device=AcceleratorDevice.AUTO),
             vlm_options=vlm_options,
-            generate_page_images=True,  # the VLM reads page images
+            # the VLM always sees the rendered pages; these flags only decide what is kept in the output
+            generate_page_images=False,
+            generate_picture_images=False,
         )
         self.converter = DocumentConverter(
             allowed_formats=[InputFormat.PDF],

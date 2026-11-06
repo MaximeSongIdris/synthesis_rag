@@ -13,7 +13,13 @@ After activating the environment, install the additional Python packages (they g
 
 ```bash
 pip install --user --no-cache-dir docling[easyocr,vlm]
+
+# download models
 docling-tools models download
-docling-tools models download easyocr --easyocr-lang en --easyocr-lang fr
-#pip install --user --no-cache-dir langchain umap-learn scikit-learn langchain_community tiktoken langchain-openai langchainhub chromadb langchain-anthropic
+docling-tools models download easyocr --easyocr-lang fr
+cd $HOME/.cache/docling/models
+git clone https://huggingface.co/microsoft/harrier-oss-v1-0.6b
+git clone https://huggingface.co/Qwen/Qwen3-VL-32B-Instruct
+
+pip install --user graspologic
 ```
