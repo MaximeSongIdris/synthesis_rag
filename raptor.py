@@ -49,7 +49,7 @@ class RaptorThemeSynthesizer:
     )
     
     THEME_SYNTHESIS_PROMPT = (
-        "Voici des extraits de documents sur le thème : {label}\n"
+        "Voici des extraits de documents portant sur un même thème.\n"
         "Chaque extrait est précédé de son identifiant entre crochets.\n\n"
         "<extraits>\n{chunks}\n</extraits>\n\n"
         "Rédige en français une synthèse de ce que ces extraits disent sur ce thème, "
@@ -57,18 +57,23 @@ class RaptorThemeSynthesizer:
         "se complète et signale ce qui varie ou se contredit d'un document à l'autre. "
         "Conserve tous les faits distincts : chiffres, dates, noms, titres de documents. "
         "N'invente rien.\n\n"
-        "Réponds avec trois champs :\n"
+        "Réponds avec quatre champs :\n"
+        "- `title` : un titre court pour le thème ;\n"
         "- `opening` : un paragraphe d'ouverture de 2 à 3 phrases donnant le message d'ensemble ;\n"
         "- `points` : la liste des faits distincts, chacun avec `fact` (le fait) et "
         "`sources` (les identifiants des extraits qui l'appuient) ;\n"
-        "- `divergences` : les contradictions entre extraits, c'est-à-dire les cas où au moins deux "
-        "extraits donnent des informations incompatibles sur un même point (valeurs, dates, noms "
-        "ou affirmations différentes). Qu'un extrait ne mentionne pas un fait n'est PAS une "
-        "divergence. Liste vide s'il n'y en a pas, ce qui est le cas le plus fréquent."
+        "- `divergences` : les contradictions entre extraits. Une divergence existe seulement si deux "
+        "affirmations ne peuvent pas être vraies en même temps : des valeurs, dates ou noms différents pour "
+        "la même chose, ou des positions opposées sur une même question. Des valeurs identiques ne sont pas "
+        "une divergence. Regroupe en une seule divergence les écarts qui portent sur un même ensemble (par "
+        "exemple toutes les différences d'une même grille de critères), et ne répète jamais une divergence. "
+        "Ne sont PAS des divergences : qu'un extrait ne mentionne pas un fait ; qu'un document approuve, "
+        "reprend, confirme ou complète ce que dit un autre ; une simple différence de formulation. "
+        "Liste vide s'il n'y en a pas."
     )
 
     MERGE_PROMPT = (
-        "Voici plusieurs synthèses partielles sur le thème : {label}\n"
+        "Voici plusieurs synthèses partielles sur un même thème.\n"
         "Elles portent sur des extraits différents d'un même ensemble de documents.\n\n"
         "<syntheses>\n{parts}\n</syntheses>\n\n"
         "Fusionne-les en français en une seule synthèse, uniquement à partir de leur contenu. "
@@ -77,14 +82,44 @@ class RaptorThemeSynthesizer:
         "tous les faits distincts : chiffres, dates, noms, titres de documents. Reprends les "
         "divergences des synthèses partielles en regroupant les identiques, et ajoute les "
         "contradictions entre faits de parties différentes. N'invente rien.\n\n"
-        "Réponds avec trois champs :\n"
+        "Réponds avec quatre champs :\n"
+        "- `title` : un titre court pour le thème ;\n"
         "- `opening` : un paragraphe d'ouverture de 2 à 3 phrases donnant le message d'ensemble ;\n"
         "- `points` : la liste des faits distincts, chacun avec `fact` (le fait) et "
         "`sources` (les identifiants des extraits qui l'appuient) ;\n"
-        "- `divergences` : les contradictions entre extraits, c'est-à-dire les cas où au moins deux "
-        "extraits donnent des informations incompatibles sur un même point (valeurs, dates, noms "
-        "ou affirmations différentes). Qu'un extrait ne mentionne pas un fait n'est PAS une "
-        "divergence. Liste vide s'il n'y en a pas, ce qui est le cas le plus fréquent."
+        "- `divergences` : les contradictions entre extraits. Une divergence existe seulement si deux "
+        "affirmations ne peuvent pas être vraies en même temps : des valeurs, dates ou noms différents pour "
+        "la même chose, ou des positions opposées sur une même question. Des valeurs identiques ne sont pas "
+        "une divergence. Regroupe en une seule divergence les écarts qui portent sur un même ensemble (par "
+        "exemple toutes les différences d'une même grille de critères), et ne répète jamais une divergence. "
+        "Ne sont PAS des divergences : qu'un extrait ne mentionne pas un fait ; qu'un document approuve, "
+        "reprend, confirme ou complète ce que dit un autre ; une simple différence de formulation. "
+        "Liste vide s'il n'y en a pas."
+    )
+
+    MAX_POINTS = 20  # above this, split_themes divides a theme into sub-themes
+
+    SPLIT_PROMPT = (
+        "Voici les points d'une synthèse sur le thème : {title}\n"
+        "Un point par ligne, au format JSON : `fact` (le fait) et `sources` (les identifiants des extraits "
+        "qui l'appuient).\n\n"
+        "<points>\n{points}\n</points>\n\n"
+        "Voici ses divergences, au même format :\n\n"
+        "<divergences>\n{divergences}\n</divergences>\n\n"
+        "Cette synthèse a trop de points pour être lue d'un coup. Répartis ces points en sous-thèmes selon "
+        "le sens, comme les sections d'une synthèse destinée à un lecteur : chaque sous-thème porte sur un "
+        "sujet distinct, et chaque point va dans un seul sous-thème. Choisis le nombre de sous-thèmes que "
+        "demande le contenu. Puis rédige pour chaque sous-thème une synthèse succincte de ses points : "
+        "regroupe les points proches en un seul, {max_points} points au plus par sous-thème. N'invente rien.\n\n"
+        "Réponds avec un champ `sub_themes` : les sous-thèmes, chacun avec :\n"
+        "- `title` : un titre court ;\n"
+        "- `opening` : une ou deux phrases donnant l'essentiel du sous-thème ;\n"
+        "- `points` : les idées essentielles, chacune avec `fact` (l'idée, en une phrase) et `sources` "
+        "(les identifiants des extraits des points regroupés) ;\n"
+        "- `divergences` : les divergences ci-dessus qui concernent ce sous-thème, chacune avec `fact` et "
+        "`sources`. Une divergence est un cas où au moins deux extraits donnent des informations "
+        "incompatibles sur un même point (valeurs, dates, noms ou affirmations différentes) ; qu'un extrait "
+        "ne mentionne pas un fait n'est PAS une divergence. Liste vide s'il n'y en a pas."
     )
 
     SUMMARY_SCHEMA = {
@@ -107,17 +142,37 @@ class RaptorThemeSynthesizer:
     SYNTHESIS_SCHEMA = {
         "type": "object",
         "properties": {
+            "title": {"type": "string"},
             "opening": {"type": "string"},
             "points": {"type": "array", "minItems": 1, "items": SOURCED_FACT_SCHEMA},
-            "divergences": {"type": "array", "items": SOURCED_FACT_SCHEMA},
+            "divergences": {"type": "array", "maxItems": MAX_POINTS, "items": SOURCED_FACT_SCHEMA},
         },
-        "required": ["opening", "points", "divergences"],
+        "required": ["title", "opening", "points", "divergences"],
+        "additionalProperties": False,
+    }
+
+    SPLIT_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "sub_themes": {"type": "array", "minItems": 2, "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "opening": {"type": "string"},
+                    "points": {"type": "array", "minItems": 1, "maxItems": MAX_POINTS, "items": SOURCED_FACT_SCHEMA},
+                    "divergences": {"type": "array", "maxItems": MAX_POINTS, "items": SOURCED_FACT_SCHEMA},
+                },
+                "required": ["title", "opening", "points", "divergences"],
+                "additionalProperties": False,
+            }},
+        },
+        "required": ["sub_themes"],
         "additionalProperties": False,
     }
 
     def __init__(self, embed_model: str | Path, llm_model: str | Path,
                  reduced_dim: int = 10, threshold: float = 0.1, max_clusters: int = 50, local_neighbors: int = 10,
-                 n_levels: int = 2, max_input_tokens: int = 16384, max_new_tokens: int = 16384,
+                 n_levels: int = 2, max_input_tokens: int = 16384, max_new_tokens: int = 32768,
                  tensor_parallel_size: int = 1, gpu_memory_utilization: float = 0.95,
                  random_state: int = 224) -> None:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -151,7 +206,8 @@ class RaptorThemeSynthesizer:
     def _generate_json(self, prompts: list[str], schemas: list[dict]) -> list[dict]:
         """Run all prompts in one vLLM batch; each output is constrained by its own JSON schema."""
         messages = [[{"role": "user", "content": prompt}] for prompt in prompts]
-        params = [SamplingParams(temperature=0.0, max_tokens=self.max_new_tokens,
+        params = [SamplingParams(temperature=0.3, top_p=0.9,
+                                 max_tokens=self.max_new_tokens,
                                  structured_outputs=StructuredOutputsParams(json=schema))
                   for schema in schemas]
         outputs = self.llm.chat(messages, params)
@@ -336,7 +392,7 @@ class RaptorThemeSynthesizer:
         return batches
 
     def synthesize_themes(self, out_dir: str | Path | None = None, level: int = 2,
-                          distance_threshold: float = 0.25) -> list[dict]:
+                          distance_threshold: float = 0.20) -> list[dict]:
         """Merge the top-level nodes into themes, then write one synthesis per theme from its original chunks.
 
         For each theme: its chunks are split into batches synthesized in one vLLM call (map),
@@ -348,12 +404,11 @@ class RaptorThemeSynthesizer:
             out_dir.mkdir(parents=True, exist_ok=True)
 
         for n, th in enumerate(themes, 1):
-            th["label"] = " / ".join(self.nodes[m].theme for m in th["members"])
             leaves = set(th["leaves"])
 
             # Map: one partial synthesis per batch of chunks
             chunks = [f"[{i}] {self.nodes[i].text}" for i in sorted(leaves)]
-            prompts = [self.THEME_SYNTHESIS_PROMPT.format(label=th["label"], chunks="\n\n".join(batch))
+            prompts = [self.THEME_SYNTHESIS_PROMPT.format(chunks="\n\n".join(batch))
                        for batch in self._pack(chunks)]
             partials = self._generate_json(prompts, [self.SYNTHESIS_SCHEMA] * len(prompts))
 
@@ -361,7 +416,7 @@ class RaptorThemeSynthesizer:
             if len(partials) > 1:
                 parts = "\n\n".join(f"[Partie {k + 1}]\n{json.dumps(p, ensure_ascii=False)}"
                                     for k, p in enumerate(partials))
-                merge_prompt = self.MERGE_PROMPT.format(label=th["label"], parts=parts)
+                merge_prompt = self.MERGE_PROMPT.format(parts=parts)
                 synthesis = self._generate_json([merge_prompt], [self.SYNTHESIS_SCHEMA])[0]
             else:
                 synthesis = partials[0]
@@ -370,6 +425,7 @@ class RaptorThemeSynthesizer:
             for item in synthesis["points"] + synthesis["divergences"]:  # drop ids outside the theme
                 item["sources"] = [s for s in item["sources"] if s in leaves]
             cited = {s for item in synthesis["points"] + synthesis["divergences"] for s in item["sources"]}
+            th["title"] = synthesis["title"]
             th["opening"] = synthesis["opening"]
             th["points"] = synthesis["points"]
             th["divergences"] = synthesis["divergences"]
@@ -377,7 +433,7 @@ class RaptorThemeSynthesizer:
             th["unused"] = sorted(leaves - cited)
 
             if out_dir:
-                theme_json = {"label": th["label"], "members": th["members"], "leaves": sorted(th["leaves"]),
+                theme_json = {"title": th["title"], "members": th["members"], "leaves": sorted(th["leaves"]),
                               "unused": th["unused"], "opening": th["opening"],
                               "points": th["points"], "divergences": th["divergences"]}
                 (out_dir / f"theme_{n}.json").write_text(
@@ -393,4 +449,43 @@ class RaptorThemeSynthesizer:
             th = json.loads(f.read_text(encoding="utf-8"))
             th["leaves"] = set(th["leaves"])  # same type as in memory (JSON stores a list)
             themes.append(th)
+        return themes
+
+    def split_themes(self, theme_dir: str | Path) -> list[dict]:
+        """Re-read the themes saved by synthesize_themes and divide those with more than MAX_POINTS points.
+
+        In one LLM call per theme (all themes in one vLLM batch), the points of the theme synthesis are split
+        into sub-themes by meaning, and each sub-theme gets a succinct synthesis of at most MAX_POINTS points
+        citing chunks, with the divergences that concern it. Every theme file gets a "sub_themes" field
+        (empty if the theme was small enough) and "sub_unused": the chunks cited by the theme but by none
+        of its sub-themes."""
+        themes = self.load_themes(theme_dir)
+        big = [th for th in themes if len(th["points"]) > self.MAX_POINTS]
+        prompts = [self.SPLIT_PROMPT.format(
+                       title=th["title"], max_points=self.MAX_POINTS,
+                       points="\n".join(json.dumps({"fact": p["fact"], "sources": p["sources"]}, ensure_ascii=False)
+                                        for p in th["points"]),
+                       divergences="\n".join(json.dumps({"fact": d["fact"], "sources": d["sources"]}, ensure_ascii=False)
+                                             for d in th["divergences"]))
+                   for th in big]
+        answers = self._generate_json(prompts, [self.SPLIT_SCHEMA] * len(prompts)) if big else []
+
+        for th in themes:
+            th["sub_themes"], th["sub_unused"] = [], []
+        for th, answer in zip(big, answers):
+            for sub in answer["sub_themes"]:
+                for key in ("points", "divergences"):  # drop duplicate ids and ids outside the theme
+                    for item in sub[key]:
+                        item["sources"] = [s for s in dict.fromkeys(item["sources"]) if s in th["leaves"]]
+                    sub[key] = [item for item in sub[key] if item["sources"]]
+                if sub["points"]:
+                    th["sub_themes"].append(sub)
+            cited = {s for sub in th["sub_themes"] for key in ("points", "divergences")
+                     for item in sub[key] for s in item["sources"]}
+            th["sub_unused"] = sorted(th["leaves"] - cited)  # chunks the sub-themes dropped
+
+        files = sorted(Path(theme_dir).glob("theme_*.json"), key=lambda p: int(p.stem.split("_")[1]))
+        for f, th in zip(files, themes):
+            f.write_text(json.dumps({**th, "leaves": sorted(th["leaves"])}, ensure_ascii=False, indent=2),
+                         encoding="utf-8")
         return themes
